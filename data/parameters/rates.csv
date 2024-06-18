@@ -1,0 +1,14 @@
+source_type;source_h_lev;source_v_lev;target_type;target_h_lev;target_v_lev;agent_type;rate_type;value
+wood;1;1;sapro;1;2;sapro;feeding;
+wood;1;1;dead;2;1;sapro;decomp_frac;
+sapro;1;2;atmosphere;9999;9999;sapro;respiration;
+wood;2;1;sapro;2;1;sapro;feeding;
+wood;2;1;dead;3;1;sapro;decomp_frac;
+sapro;2;2;atmosphere;9999;9999;sapro;respiration;
+wood;3;2;sapro;3;2;sapro;feeding;
+wood;3;1;dead;4;2;sapro;decomp_frac;
+sapro;3;2;atmosphere;9999;9999;sapro;respiration;
+sapro;-1;2;predator;-1;3;predator;feeding;
+predator;-1;3;atmosphere;9999;9999;predator;respiration;
+predator;-1;3;predator;-1;4;predator;feeding;
+predator;-1;4;atmosphere;9999;9999;predator;respiration;

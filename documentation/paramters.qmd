@@ -1,0 +1,12 @@
+---
+title: "Parameter sources"
+author: "Yannek Käber"
+format: html
+editor: visual
+---
+
+# Model parameters
+
+The purpose of this document is to summarize existing knowledge about carbon fluxes from plant biomass through food webs in forests. The Wood-Litter-Light Forest-Biodiversity-Model (WLL-FBM) aims to explain the loss of woody biomass with vital rates of all organisms that rely on trees as primary producers
+
+## 
