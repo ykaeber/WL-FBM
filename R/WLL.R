@@ -89,7 +89,7 @@ model_stucture_dt[type == "saprotrophs", x_pos := x_pos+0.5]
 model_stucture_dt <- unique(model_stucture_dt)
 ggplot(model_stucture_dt, aes(x = x_pos, y = y_pos))+
   geom_tile(aes(fill = type, width = width, height = height), linewidth = 3)+
-  geom_label(aes(label = label))
+   geom_label(aes(label = label))
   
 
 directions <- igraph::graph_from_data_frame(model_stucture_dt, directed = T)
