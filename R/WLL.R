@@ -7,7 +7,6 @@
 ################################################################################
 library(data.table)
 
-
 # the input csv has the 6 columns with different attributes. This table defines
 # the rates with which carbon flows are distributed in the system.
 # Each row represents a flow rate between two components of the model.
@@ -24,8 +23,7 @@ library(data.table)
 #   the final decomposition stage which corresponds to soil organic carbon that
 #   is not part of any chemical storage
 # 
-parameters_dt <- fread("data/parameters/rates.csv")
-
+parameters_dt <- fread("data/parameters/rates/rates-rates.csv")
 
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 ## initialize model ####
@@ -33,27 +31,28 @@ parameters_dt <- fread("data/parameters/rates.csv")
 
 initial_wood = c(100, 0, 0, 0)
 
-horizontal_levels = sort(unique(c(parameters_dt$source_h_lev, parameters_dt$target_h_lev)))
-Nhorizontal = uniqueN(horizontal_levels)
-vertical_levels = sort(unique(c(parameters_dt$source_v_lev, parameters_dt$target_v_lev)))
-Nvertical = uniqueN(vertical_levels)
+horizontal_levels = sort(unique(parameters_dt$hID))
+Nhorizontal = sum(horizontal_levels > 0)
+vertical_levels = sort(unique(parameters_dt$vID))
+Nvertical = sum(vertical_levels > 0)
 
 biomass <- list(
   wood = initial_wood,
   sapro = rep(0, length(initial_wood)-1),
-  predator = rep(0,Nvertical-1)
+  predator = rep(0,Nvertical)
 )
 
 atmospheric_carbon = 0
+soc = 0
 
 #### set parameters ####
 parameters <- list()
 for(rate_type_i in c("feeding", "decomp_frac", "respiration")){
-  parameters[["sapro"]][[rate_type_i]] <- as.matrix(parameters_dt[agent_type == "sapro" & rate_type == rate_type_i, .(h_level = source_h_lev, v_level = source_v_lev,value)])
+  parameters[["sapro"]][[rate_type_i]] <- as.matrix(parameters_dt[agent_type == "sapro" & rate_type == rate_type_i, .(hID, vID, value)])
 }
 
-parameters[["predators"]][["feeding"]] <- as.matrix(parameters_dt[agent_type == "predator" & rate_type == "feeding", .(h_level = source_h_lev, v_level = target_v_lev, value)])
-parameters[["predators"]][["respiration"]] <- as.matrix(parameters_dt[agent_type == "predator" & rate_type == "respiration", .(h_level = source_h_lev, v_level = source_v_lev, value)])
+parameters[["predators"]][["feeding"]] <- as.matrix(parameters_dt[agent_type == "predator" & rate_type == "feeding", .(hID, vID, value)])
+parameters[["predators"]][["respiration"]] <- as.matrix(parameters_dt[agent_type == "predator" & rate_type == "respiration", .(hID, vID, value)])
 
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 ## plot model ####
@@ -61,39 +60,93 @@ parameters[["predators"]][["respiration"]] <- as.matrix(parameters_dt[agent_type
 
 library(ggplot2)
 
-model_stucture_dt <- data.table(
-  expand.grid(
-    list(
-      x_pos = as.numeric(1:Nhorizontal),
-      # x_names = horizontal_levels,
-      y_pos = as.numeric(1:Nvertical)
-      # y_names = vertical_levels
-      )
-    ))
-model_stucture_dt[,":="(
-  width = 0.6,
-  height = 0.4),]
-model_stucture_dt[x_pos == 1 & y_pos == 1, ":="(label = "alive", type = "wood"),]
-model_stucture_dt[x_pos > 1 & x_pos < Nhorizontal & y_pos == 1, ":="(label = "dead", type = "wood"),]
-model_stucture_dt[x_pos == Nhorizontal-1 & y_pos == 1, ":="(label = "soil", type = "soil"),]
-model_stucture_dt[y_pos > 1 & y_pos < min(parameters$predators$feeding[,2]), ":="(label = "sapro", type = "saprotrophs"),]
-model_stucture_dt[y_pos < Nvertical & x_pos < Nhorizontal & y_pos >= min(parameters$predators$feeding[,2]), ":="(
-  label = "predators", type = "predators", x_pos = mean(1:Nvertical), width = Nvertical-1+0.6
+model_stucture_dt <- rbind(
+  data.table(
+    agent_type = c("alive", rep("dead",Nhorizontal-1)  ,"soil"),
+    hID = 1:(length(horizontal_levels)),
+    vID = 1
+  ),
+  parameters_dt,fill =T)
+model_stucture_dt[,boxID := paste0(agent_type, "_", hID, vID),]
+
+boxes <- unique(model_stucture_dt[, .(agent_type, boxID, hID, vID)])
+boxes[, ":="(x = as.numeric(hID), y = as.numeric(vID)),]
+boxes[hID == 0, x := median(range(model_stucture_dt$vID,max(model_stucture_dt$vID)+1)),]
+boxes[,":="(width = 0.6, height = 0.4),]
+boxes[agent_type == "sapro",":="(x = x+0.5),]
+
+arrows <- boxes
+arrows <- merge(arrows, model_stucture_dt[,.(boxID, rate_type, value)], by= "boxID")
+
+arrows[rate_type == "respiration", ":="(
+  x_start = x + width/2, 
+  y_start = y,
+  x_end = (x + width/2)+0.2,
+  y_end = y + 0.2,
+  curvature = -0.3
+  ) ,]
+arrows[rate_type == "decomp_frac", ":="(
+  x_start = x - 0.5, 
+  y_start = y - 1 + height/2,
+  x_end = x + 0.5,
+  y_end = y - 1 + height/2,
+  curvature = -0.5
+  ) ,]
+arrows[rate_type == "feeding" & hID != 0, ":="(
+  x_start = x - 0.5, 
+  y_start = y - 1 + height/2,
+  x_end = x,
+  y_end = y - height/2,
+  curvature = 0.5
+  ) ,]
+
+# define arrows for generalists (hID)
+
+generalists <- arrows[rate_type == "feeding" & hID == 0]
+arrows_generalists <- data.table()
+v=3
+for(v in generalists$vID){
+  v_prey = v - 1
+  temp_dt <- boxes[vID == v_prey]
+  temp_dt[,":="(
+    x_start = x, 
+    y_start = y + height/2,
+    x_end = generalists[vID == v]$x,
+    y_end = generalists[vID == v]$y - generalists[vID == v]$height/2
   ),]
-model_stucture_dt[y_pos == Nvertical, ":="(label = "atmosphere", type = "atmosphere", x_pos = mean(1:Nvertical)+0.5, width = Nvertical+0.6),]
-model_stucture_dt[x_pos == Nhorizontal, ":="(label = "atmosphere", type = "atmosphere", y_pos = mean(1:Nhorizontal)-0.5, height = Nvertical-1+0.4),]
+  arrows_generalists <- rbind(arrows_generalists, temp_dt)
+}
 
-model_stucture_dt <- model_stucture_dt[!(type == "saprotrophs" & x_pos == Nhorizontal-1)]
-model_stucture_dt[type == "saprotrophs", x_pos := x_pos+0.5]
 
-model_stucture_dt <- unique(model_stucture_dt)
-ggplot(model_stucture_dt, aes(x = x_pos, y = y_pos))+
-  geom_tile(aes(fill = type, width = width, height = height), linewidth = 3)+
-   geom_label(aes(label = label))
-  
+ggplot(boxes, aes(x = x, y = y))+
+  geom_tile(aes(width = width, height = height,fill = agent_type), linewidth = 3)+
+  geom_label(aes(label = agent_type))+
+  geom_curve(aes(
+    x = x_start, y = y_start, xend = x_end, yend = y_end, color = rate_type),
+    data = arrows[rate_type %in% c("respiration")], 
+    curvature = 0.3, size = 1,lineend = "round",
+    arrow = arrow(length = unit(0.1, "inches")))+
+  geom_curve(aes(
+    x = x_start, y = y_start, xend = x_end, yend = y_end, color = rate_type),
+    data = arrows[rate_type %in% c("decomp_frac")], 
+    curvature = -0.5, size = 1,lineend = "round",
+    arrow = arrow(length = unit(0.1, "inches")))+
+  geom_curve(aes(
+    x = x_start, y = y_start, xend = x_end, yend = y_end, color = rate_type),
+    data = arrows[rate_type %in% c("feeding")], 
+    curvature = 0.2, size = 1,lineend = "round",
+    arrow = arrow(length = unit(0.1, "inches")))+
+  geom_curve(aes(
+    x = x_start, y = y_start, xend = x_end, yend = y_end, color = "feeding"),
+    data = arrows_generalists, 
+    curvature = 0, size = 1,lineend = "round",
+    arrow = arrow(length = unit(0.1, "inches")))+
+  theme_void()
 
-directions <- igraph::graph_from_data_frame(model_stucture_dt, directed = T)
-igraph::layout_as_tree(directions)
+bitheme_minimal()biomass$wood
+biomass$sapro
+biomass$predator
+
 t_max = 300
 out_df = data.frame()
 t=1
@@ -101,7 +154,22 @@ for(t in 0:t_max){
   
   if(t > 0){
     
+    # simulate wood and sapro interactions
+    
+    sapro_feed <- c()
+    sapro_resp <- c()
+    wood_decomp <- c()
+    for(v in 1:length(biomass$wood)){
+      # calculate flows caused by sapro
+      sapro_feed[v] = biomass$wood[v]*parameters$sapro$feeding[v]
+      sapro_resp[v] = biomass$wood[v]*parameters$sapro$respiration[v]
+      wood_decomp[v] = sapro_feed*parameters$sapro$decomp_frac[v]
+    }
+    
     # sapro1 feeding on alive
+    
+    parameters$sapro$feeding
+    
     flux_alive_to_sapro1 = biomass$alive*parameters$sapro1$feeding_rate
     resp_sapro1 = biomass$sapro1*parameters$sapro1$respiration_rate
     biomass$sapro1 = biomass$sapro1 + flux_alive_to_sapro1 - resp_sapro1
@@ -122,11 +190,17 @@ for(t in 0:t_max){
     biomass$dead2 = biomass$dead2 + flux_dead1_to_sapro2*flux_dead1_to_sapro2
   }
   
-  out_df <- rbind(
-    out_df,
-      data.frame(
+  out_df_temp <- rbindlist(
+    list(
+      data.table(pool = "wood", poolsubID = 1:length(biomass$wood), biomass = biomass$wood),
+      data.table(pool = "sapro", poolsubID = 1:length(biomass$sapro), biomass = biomass$sapro),
+      data.table(pool = "predator", poolsubID = 1:length(biomass$predator), biomass = biomass$predator),
+      data.table(pool = "atmospheric_carbon", poolsubID = 1, biomass = atmospheric_carbon),
+      data.table(pool = "soc", poolsubID = 1, biomass = 0)
       )
     )
+  out_df_temp$t = t
+  out_df <- rbind(out_df, out_df_temp)
 }
 
 par(mfrow = c(2,1))
